@@ -29,12 +29,12 @@ int main(int argc, char *argv[]) {
 
     size_t i;
 	char result[4];
-    for (i = 0; i < len; ++i)
+    for (i = 0; i < len; i=i+2)
 	{
         printf("%x%x \n", (int)mem[page_offset + i], (int)mem[page_offset + i + 1]);
 		//printf("%d", mem[i]);
 		sprintf(result,"%x%x",(int)mem[page_offset + i],(int)mem[page_offset + i + 1]);
-		printf("%ld",strtol(result,NULL,16));
+		printf("%ld\n",strtol(result,NULL,16));
 	}
 	printf("\n");
     return 0;
