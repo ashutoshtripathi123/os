@@ -8,14 +8,14 @@ ARFLAGS = 	rcs
 
 LDFLAGS =   -lrt -lpthread -lgcov
 
-SOURCE =	code.c
+SOURCE =	newApproach.c
 
 #LIBS =		libgetsynctime.a
 
-TARGET =	code
+TARGET =	newApproach
 
-$(TARGET):	code.c $(LIBS)
-	$(CC) $(CCFLAGS) -o $(TARGET) code.c  $(LDFLAGS)
+$(TARGET):	newApproach.c $(LIBS)
+	$(CC) $(CCFLAGS) -o $(TARGET) newApproach.c  $(LDFLAGS)
 
 .PHONY: clean
 .PHONY: copy
@@ -24,15 +24,15 @@ $(TARGET):	code.c $(LIBS)
 
 all:	$(TARGET)
 
-copy: code
-	cp code /cygdrive/c/transfer/.
+copy: newApproach
+	cp newApproach /cygdrive/c/transfer/.
 
 clean:
 	rm -f $(TARGET) *.gcda *.gcno *.gcov
 
-code.o: code.c	
-	$(CC) $(CXXFLAGS) -c code.c
+newApproach.o: newApproach.c	
+	$(CC) $(CXXFLAGS) -c newApproach.c
 
 coverage:
-	chmod 600 code.gcda
+	chmod 600 newApproach.gcda
 	$(GCOV) $(TARGET)
