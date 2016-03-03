@@ -25,8 +25,8 @@
 #define TEST_WRP_OP_ADDR 0xC0000024 // DAC 2 memory address
 #define SPARE_DAC_3_ADDR 0xC0000026 // DAC 3 memory address
 
-#define MIN_COUNT_RANGE 0
-#define MAX_COUNT_RANGE 1023
+#define MIN_COUNT_RANGE 51
+#define MAX_COUNT_RANGE 970
 
 #define MIN_VOLT_RANGE 0.25
 #define MAX_VOLT_RANGE 4.75
@@ -37,10 +37,16 @@
 #define MIN_ENGG_UNIT_RANGE -100
 #define MAX_ENGG_UNIT_RANGE 100
 
+#define MIN_ENGG_UNIT_SPD_RANGE -200
+#define MAX_ENGG_UNIT_SPD_RANGE 200
+
+#define MIN_DAC_VOLT_RANGE -24
+#define MAX_DAC_VOLT_RANGE 24
+
+#define MIN_DAC_ENGG_UNIT_RANGE 0
+#define MAX_DAC_ENGG_UNIT_RANGE 1023
+
 void     INThandler(int);
-
-
-
 
 struct ADC
 {
@@ -71,12 +77,41 @@ struct ADC
 };
 
 struct DAC{
-	uint16_t LWD_MTR_DMND ;
-	uint16_t RWD_MTR_DMND ;
-	uint16_t TEST_WRP_OP ;
-	uint16_t SPARE_DAC_3 ;
+	int LWD_MTR_DMND ;
+	int RWD_MTR_DMND ;
+	int TEST_WRP_OP ;
+	int SPARE_DAC_3 ;
+	float LWD_MTR_DMND_Volt ;
+	float RWD_MTR_DMND_Volt ;
+	int LWD_MTR_DMND_Engg_Unit ;
+	int RWD_MTR_DMND_Engg_Unit ;
 };
 
+struct 
+{
+	int seat_switch;
+	int seat_occupy;
+	int kill_switch_fit;
+	int kill_key_pressed;
+}keys;
+
+void findFault()
+{
+	printf("seat_switch = %d, seat_occupy = %d, kill_switch_fit = %d, kill_key_pressed = %d \n", 
+	keys.seat_switch, keys.seat_occupy,keys.kill_switch_fit, keys.kill_key_pressed);
+	
+	if((keys.kill_switch_fit == 0) && (keys.kill_key_pressed == 1))
+	{
+		printf("FAULT DETECTED: Kill Switch Pressed When Switch Not Present !!! \n");
+		return;
+	}
+	
+	if((keys.seat_switch == 0) && (keys.seat_occupy == 1))
+	{
+		printf("FAULT DETECTED: Seat Occupied When Switch Not Present !!! \n");
+		return;
+	}
+}
 
 struct ADC myADC ;
 struct DAC myDAC;
@@ -107,6 +142,30 @@ int calcEnggUnitForChair(float input)
 	return result;
 }
 
+int calcEnggUnitForSpd(float input, int offset)
+{
+    int result;
+	result = (input - MIN_VOLT_RANGE)*(MAX_ENGG_UNIT_SPD_RANGE-MIN_ENGG_UNIT_SPD_RANGE)/(MAX_VOLT_RANGE-MIN_VOLT_RANGE) +offset;
+	return result;
+}
+
+int calcDACEnggUnit(float input)
+{
+    int result;
+	result = (input - MIN_DAC_VOLT_RANGE)*(MAX_DAC_ENGG_UNIT_RANGE-MIN_DAC_ENGG_UNIT_RANGE)/(MAX_DAC_VOLT_RANGE-MIN_DAC_VOLT_RANGE);
+	return result;
+}
+
+float getMin(float a, float b)
+{
+	return (a<b)?a:b;
+}
+
+float getMax(float a, float b)
+{
+	return (a>b)?a:b;
+}
+
 void read_adc(){
 	off_t offset = 0xc0000000;
     //size_t len = 40;
@@ -135,62 +194,59 @@ void read_adc(){
 	myADC.Seat_Height_Engg_Unit = calcEnggUnitForChair(myADC.Seat_Height_Volt);
 	myADC.Joystic_X_Engg_Unit = calcEnggUnit(myADC.Joystic_X_Volt, -100);
 	myADC.Joystic_Y_Engg_Unit = calcEnggUnit(myADC.Joystic_Y_Volt, -100);
-	myADC.LWD_MTR_SPD_Engg_Unit = calcEnggUnit(myADC.LWD_MTR_SPD_Volt, -100);
-	myADC.RWD_MTR_SPD_Engg_Unit = calcEnggUnit(myADC.RWD_MTR_SPD_Volt, -100);
+	myADC.LWD_MTR_SPD_Engg_Unit = calcEnggUnitForSpd(myADC.LWD_MTR_SPD_Volt, -200);
+	myADC.RWD_MTR_SPD_Engg_Unit = calcEnggUnitForSpd(myADC.RWD_MTR_SPD_Volt, -200);
 	myADC.TEST_WRAP_INP_Engg_Unit = calcEnggUnit(myADC.TEST_WRAP_INP_Volt, -100);
 	myADC.Spare_ADC_6_Engg_Unit = calcEnggUnit(myADC.Spare_ADC_6_Volt, -100);
 	myADC.Spare_ADC_7_Engg_Unit = calcEnggUnit(myADC.Spare_ADC_7_Volt, -100);
 }
 void write_dac(){
-	unsigned int dac0,dac1,dac2,dac3;
-	uint8_t upper, lower;
+	int dac0,dac1,dac2,dac3;
+	int upper, lower;
 	off_t offset = 0xc0000020;
 	size_t pagesize = sysconf(_SC_PAGE_SIZE);
     off_t page_base = (offset / pagesize) * pagesize;
     off_t pageOffset = offset - page_base;
-	//fd1 = open("/dev/mem", O_RDWR |  O_SYNC);
-	//memW = mmap(NULL, pageOffset+8, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd1, page_base);
-	//mem[pageOffset+0]=1;
-	//mem[pageOffset+2]=1;
-	//mem[pageOffset+4]=1;
-	//mem[pageOffset+6]=1;
-	printf("Give dac value from 0 to 1023\n");
-	printf("Dac 0: \n");
-	if( poll(&mypoll, 1, 1000) ){
-	
-    scanf("%u",&dac0);
+
+    myDAC.LWD_MTR_DMND_Volt = (getMin(getMax(myADC.Joystic_X_Engg_Unit,-100),100) / 100) * 24;
+	myDAC.LWD_MTR_DMND_Engg_Unit = calcDACEnggUnit(myDAC.LWD_MTR_DMND_Volt);
+	//printf("myDAC.LWD_MTR_DMND_Volt = %f :: myDAC.LWD_MTR_DMND_Engg_Unit = %d \n", myDAC.LWD_MTR_DMND_Volt, myDAC.LWD_MTR_DMND_Engg_Unit);
+	dac0 = myDAC.LWD_MTR_DMND_Engg_Unit;
 	upper=0;
 	lower=0;
-	upper= (uint8_t)(dac0>>8);
-	lower= (uint8_t)dac0;
-	
+	upper= (int)(dac0>>8);
+	lower= (int)dac0;
 	*(mem+pageOffset+0) = upper;
 	*(mem+pageOffset+1) = lower;
-	
-	printf("Dac 1:");
-    scanf("%u",&dac1);
-	//if(dac10 || dac<1023)
+
+    myDAC.RWD_MTR_DMND_Volt = (getMin(getMax(myADC.Joystic_Y_Engg_Unit,-100),100) / 100) * 24;
+	myDAC.RWD_MTR_DMND_Engg_Unit = calcDACEnggUnit(myDAC.RWD_MTR_DMND_Volt);
+	//printf("myDAC.RWD_MTR_DMND_Volt = %f :: myDAC.RWD_MTR_DMND_Engg_Unit = %d \n", myDAC.RWD_MTR_DMND_Volt, myDAC.RWD_MTR_DMND_Engg_Unit);
+    dac1 = myDAC.RWD_MTR_DMND_Engg_Unit;
 		
 	upper=0;
 	lower=0;
-	upper= (uint8_t)(dac1>>8);
-	lower= (uint8_t)dac1;
+	upper= (int)(dac1>>8);
+	lower= (int)dac1;
 	*(mem+pageOffset+2) = upper;
 	*(mem+pageOffset+3) = lower;
-	printf("Dac 2:");
-    scanf("%u",&dac2);
+
+
+	dac2 = 0;
+
 	upper=0;
 	lower=0;
-	upper= (uint8_t)(dac2>>8);
-	lower= (uint8_t)dac2;
+	upper= (int)(dac2>>8);
+	lower= (int)dac2;
 	*(mem+pageOffset+4) = upper;
 	*(mem+pageOffset+5) = lower;
-	printf("Dac 3:");
-    scanf("%u",&dac3);
+
+	dac3 = 0;
+
 	upper=0;
 	lower=0;
-	upper= (uint8_t)(dac3>>8);
-	lower= (uint8_t)dac3;
+	upper= (int)(dac3>>8);
+	lower= (int)dac3;
 	*(mem+pageOffset+6) = upper;
 	*(mem+pageOffset+7) = lower;
 	
@@ -202,7 +258,7 @@ void write_dac(){
 	*(mem+pageOffset+5) = 0x80;
 	*(mem+pageOffset+6) = 0x03;
 	*(mem+pageOffset+7) = 0x80;*/
-	}
+	//} //end of if(poll)
 	
 	
 }
@@ -212,10 +268,10 @@ void read_dac(){
     off_t page_base = (offset / pagesize) * pagesize;
     off_t pageOffset = offset - page_base;
 	
-	myDAC.LWD_MTR_DMND = ((uint8_t)mem[pageOffset+0+0]<<8 |(uint8_t)mem[pageOffset+0+1]);
-	myDAC.RWD_MTR_DMND = ((uint8_t)mem[pageOffset+2+0]<<8 |(uint8_t)mem[pageOffset+2+1]);
-	myDAC.TEST_WRP_OP = ((uint8_t)mem[pageOffset+4+0]<<8 |(uint8_t)mem[pageOffset+4+1]);
-	myDAC.SPARE_DAC_3 = ((uint8_t)mem[pageOffset+6+0]<<8 |(uint8_t)mem[pageOffset+6+1]);
+	myDAC.LWD_MTR_DMND = ((int)mem[pageOffset+0+0]<<8 |(int)mem[pageOffset+0+1]);
+	myDAC.RWD_MTR_DMND = ((int)mem[pageOffset+2+0]<<8 |(int)mem[pageOffset+2+1]);
+	myDAC.TEST_WRP_OP = ((int)mem[pageOffset+4+0]<<8 |(int)mem[pageOffset+4+1]);
+	myDAC.SPARE_DAC_3 = ((int)mem[pageOffset+6+0]<<8 |(int)mem[pageOffset+6+1]);
 }
 
 
@@ -249,77 +305,62 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 	while(1){
-	read_adc();
-	/*printf(" Seat_Height(ADC 0) = %d \n Joystic_X(ADC 1) = %d \n Joystic_Y(ADC 2) = %d \n LWD_MTR_SPD(ADC 3) = %d \n RWD_MTR_SPD(ADC 4) = %d \n TEST_WRAP_INP(ADC 5) = %d \n Spare_ADC_6(ADC 6) = %d\n Spare_ADC_7(ADC 7) = %d \n",
-		    myADC.Seat_Height,
-			myADC.Joystic_X,
-			myADC.Joystic_Y,
-			myADC.LWD_MTR_SPD,
-			myADC.RWD_MTR_SPD,
-			myADC.TEST_WRAP_INP,
-			myADC.Spare_ADC_6 ,
-			myADC.Spare_ADC_7);
-	*/		
-	
+	read_adc();		
 			
 	read_dac();
-	/*printf(" LWD_MTR_DMND(DAC 0) = %d \n RWD_MTR_DMND(DAC 1) = %d \n TEST_WRP_OP(DAC 2) = %d \n SPARE_DAC_3(DAC 3)= %d\n",
-		    myDAC.LWD_MTR_DMND,
-			myDAC.RWD_MTR_DMND ,
-			myDAC.TEST_WRP_OP ,
-			myDAC.SPARE_DAC_3);*/
 
-			printf(" (ADC 0) :: Count = %d :: Volt = %f :: Engg = %d  \n" 
-			       " (ADC 1) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-			       " (ADC 2) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-				   " (ADC 3) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-				   " (ADC 4) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-				   " (ADC 5) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-				   " (ADC 6) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-				   " (ADC 7) :: Count = %d :: Volt = %f :: Engg = %d  \n",
-		    myADC.Seat_Height, myADC.Seat_Height_Volt, myADC.Seat_Height_Engg_Unit,
-			myADC.Joystic_X, myADC.Joystic_X_Volt, myADC.Joystic_X_Engg_Unit,
-			myADC.Joystic_Y, myADC.Joystic_Y_Volt, myADC.Joystic_Y_Engg_Unit,
-			myADC.LWD_MTR_SPD, myADC.LWD_MTR_SPD_Volt, myADC.LWD_MTR_SPD_Engg_Unit,
-			myADC.RWD_MTR_SPD, myADC.RWD_MTR_SPD_Volt, myADC.RWD_MTR_SPD_Engg_Unit,
-			myADC.TEST_WRAP_INP, myADC.TEST_WRAP_INP_Volt, myADC.TEST_WRAP_INP_Engg_Unit,
-			myADC.Spare_ADC_6, myADC.Spare_ADC_6_Volt, myADC.Spare_ADC_6_Engg_Unit,
-			myADC.Spare_ADC_7, myADC.Spare_ADC_7_Volt, myADC.Spare_ADC_7_Engg_Unit
-			);
-			
-			printf(" \n (DAC 0) = %d \n (DAC 1) = %d \n (DAC 2) = %d \n (DAC 3) = %d\n\n",
-		    myDAC.LWD_MTR_DMND,
-			myDAC.RWD_MTR_DMND ,
-			myDAC.TEST_WRP_OP ,
-			myDAC.SPARE_DAC_3);
+	printf(" (ADC 0) :: Count = %d :: Volt = %f :: Engg = %d  \n" 
+		   " (ADC 1) :: Count = %d :: Volt = %f :: Engg = %d  \n"
+		   " (ADC 2) :: Count = %d :: Volt = %f :: Engg = %d  \n"
+		   " (ADC 3) :: Count = %d :: Volt = %f :: Engg = %d  \n"
+		   " (ADC 4) :: Count = %d :: Volt = %f :: Engg = %d  \n",
+		   //" (ADC 5) :: Count = %d :: Volt = %f :: Engg = %d  \n"
+		   //" (ADC 6) :: Count = %d :: Volt = %f :: Engg = %d  \n"
+		   //" (ADC 7) :: Count = %d :: Volt = %f :: Engg = %d  \n",
+	myADC.Seat_Height, myADC.Seat_Height_Volt, myADC.Seat_Height_Engg_Unit,
+	myADC.Joystic_X, myADC.Joystic_X_Volt, myADC.Joystic_X_Engg_Unit,
+	myADC.Joystic_Y, myADC.Joystic_Y_Volt, myADC.Joystic_Y_Engg_Unit,
+	myADC.LWD_MTR_SPD, myADC.LWD_MTR_SPD_Volt, myADC.LWD_MTR_SPD_Engg_Unit,
+	myADC.RWD_MTR_SPD, myADC.RWD_MTR_SPD_Volt, myADC.RWD_MTR_SPD_Engg_Unit
+	//myADC.TEST_WRAP_INP, myADC.TEST_WRAP_INP_Volt, myADC.TEST_WRAP_INP_Engg_Unit,
+	//myADC.Spare_ADC_6, myADC.Spare_ADC_6_Volt, myADC.Spare_ADC_6_Engg_Unit,
+	//myADC.Spare_ADC_7, myADC.Spare_ADC_7_Volt, myADC.Spare_ADC_7_Engg_Unit
+	);
+	
+	printf(" \n (DAC 0) = %d \n (DAC 1) = %d \n (DAC 2) = %d \n (DAC 3) = %d\n\n",
+	myDAC.LWD_MTR_DMND,
+	myDAC.RWD_MTR_DMND ,
+	myDAC.TEST_WRP_OP ,
+	myDAC.SPARE_DAC_3);
 
 	
 	
-    size_t i,j=0;
-	char result[5];
+    int i=0,j=0;
+	char result1[4];
+	char result2[2];
+    int num1=0,num2=0;
 	//char gpio1[15];
 	//char gpio2[15];
+	memset(&result1, 0, sizeof(char)*4);
+	memset(&result2, 0, sizeof(char)*4);
 	offset = 0xc0000018;//strtoul(argv[1], NULL, 0);
     len = 8;//strtoul(argv[2], NULL, 0);
 	 page_base = (offset / pagesize) * pagesize;
      page_offset = offset - page_base;
 	
-    for (i = 0; i < len; i=i+4)
-	{
-		
-        //printf("hex :%02x%02x%02x%02x \n", (int)mem[page_offset + i], (int)mem[page_offset + i + 1],(int)mem[page_offset + i+2], (int)mem[page_offset + i + 3]);
-		//printf("%d", mem[i]);
-		sprintf(result,"%02x%02x%02x%02x", (int)mem[page_offset + i], (int)mem[page_offset + i + 1],(int)mem[page_offset + i+2], (int)mem[page_offset + i + 3]);
-		//if(i==0)
-		//strcpy(gpio1,result);
-		printf(" GPIO %d :0x%s\n",j++,result);
-	}
+
+		sprintf(result1,"%02x%02x%02x%02x", (int)mem[page_offset + i], (int)mem[page_offset + i + 1],(int)mem[page_offset + i + 2], (int)mem[page_offset + i + 3]);
+		sprintf(result2,"%02x%02x", (int)mem[page_offset + i + 2], (int)mem[page_offset + i + 3]);
+		num1 = (int)mem[page_offset + i + 1];
+		num2 = (int)mem[page_offset + i + 3];
+
+        keys.seat_switch = (num1 & 128)>>7;
+		keys.seat_occupy = ((num1 & 132)== 132)?1:0;
+		keys.kill_switch_fit = (num2 & 16)>>4;
+		keys.kill_key_pressed = (num2 & 48)>>5;
+
+		findFault();
 	
-	//printf("Kill Switch = %d :: Occupied Button = %d :: Seat Occupancy Switch = %d \n",
-	//	(int)mem[page_offset + i] & (int)(0x0000001<<5),
-	//	(int)mem[page_offset + i+2] & (int)0x00040000,
-	//	(int)mem[page_offset + i+2] & (int)0x00800000);
-	//strcpy(gpio2,result);
 	printf("\n");
 	fptr = fopen(fileop, "a");
 	fprintf(fptr, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d \n",
@@ -339,7 +380,7 @@ int main(int argc, char *argv[]) {
 	write_dac();
 	printf("\033[2J");
    printf("\033[2H");
-   //sleep(1);
+   sleep(1);
 	}
     return 0;
 
