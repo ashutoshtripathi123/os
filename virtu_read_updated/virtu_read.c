@@ -93,13 +93,19 @@ struct
 	int seat_occupy;
 	int kill_switch_fit;
 	int kill_key_pressed;
+	int kill_k_pressed;
 }keys;
 
 void findFault()
 {
-	printf("seat_switch = %d, seat_occupy = %d, kill_switch_fit = %d, kill_key_pressed = %d \n", 
-	keys.seat_switch, keys.seat_occupy,keys.kill_switch_fit, keys.kill_key_pressed);
+	printf("seat_switch = %d, seat_occupy = %d, kill_switch_fit = %d, kill_key_pressed = %d, kill_k_pressed = %d \n", 
+	keys.seat_switch, keys.seat_occupy,keys.kill_switch_fit, keys.kill_key_pressed, keys.kill_k_pressed);
 	
+	if(keys.kill_k_pressed == 1)
+	{
+		printf("Key K has been pressed - kill switch released ... \n");
+		return;
+	}
 	if((keys.kill_switch_fit == 0) && (keys.kill_key_pressed == 1))
 	{
 		printf("FAULT DETECTED: Kill Switch Pressed When Switch Not Present !!! \n");
@@ -199,6 +205,16 @@ void read_adc(){
 	myADC.TEST_WRAP_INP_Engg_Unit = calcEnggUnit(myADC.TEST_WRAP_INP_Volt, -100);
 	myADC.Spare_ADC_6_Engg_Unit = calcEnggUnit(myADC.Spare_ADC_6_Volt, -100);
 	myADC.Spare_ADC_7_Engg_Unit = calcEnggUnit(myADC.Spare_ADC_7_Volt, -100);
+
+	if(myADC.Seat_Height_Volt < 0.25 || myADC.Joystic_X_Volt < 0.25 || myADC.Joystic_Y_Volt < 0.25)
+	{
+		printf("The input value from the plant model is too low !!! \n");
+	}
+	if(myADC.Seat_Height_Volt > 4.8 || myADC.Joystic_X_Volt > 4.8 || myADC.Joystic_Y_Volt > 4.8)
+	{
+		printf("The input value from the plant model is too High !!! \n");
+	}
+
 }
 void write_dac(){
 	int dac0,dac1,dac2,dac3;
@@ -353,11 +369,18 @@ int main(int argc, char *argv[]) {
 		sprintf(result2,"%02x%02x", (int)mem[page_offset + i + 2], (int)mem[page_offset + i + 3]);
 		num1 = (int)mem[page_offset + i + 1];
 		num2 = (int)mem[page_offset + i + 3];
+		printf("num1 = %d, num2 = %d \n", num1, num2);
 
-        keys.seat_switch = (num1 & 128)>>7;
+  keys.seat_switch = (num1 & 128)>>7;
 		keys.seat_occupy = ((num1 & 132)== 132)?1:0;
 		keys.kill_switch_fit = (num2 & 16)>>4;
 		keys.kill_key_pressed = (num2 & 48)>>5;
+		keys.kill_k_pressed = (num2 & 112)>>6;
+		
+  if(keys.kill_k_pressed == 1)
+		{
+			keys.kill_switch_fit = 0;
+		}
 
 		findFault();
 	
