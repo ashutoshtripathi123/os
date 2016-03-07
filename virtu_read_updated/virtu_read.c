@@ -99,7 +99,7 @@ struct
 void findFault()
 {
 	printf("seat_switch = %d, seat_occupy = %d, kill_switch_fit = %d, kill_key_pressed = %d, kill_k_pressed = %d \n", 
-	keys.seat_switch, keys.seat_occupy,keys.kill_switch_fit, keys.kill_key_pressed, keys.kill_k_pressed);
+     keys.seat_switch, keys.seat_occupy,keys.kill_switch_fit, keys.kill_key_pressed, keys.kill_k_pressed);
 	
 	if(keys.kill_k_pressed == 1)
 	{
@@ -324,7 +324,7 @@ int main(int argc, char *argv[]) {
 	read_adc();		
 			
 	read_dac();
-
+    #if 1
 	printf(" (ADC 0) :: Count = %d :: Volt = %f :: Engg = %d  \n" 
 		   " (ADC 1) :: Count = %d :: Volt = %f :: Engg = %d  \n"
 		   " (ADC 2) :: Count = %d :: Volt = %f :: Engg = %d  \n"
@@ -349,7 +349,7 @@ int main(int argc, char *argv[]) {
 	myDAC.TEST_WRP_OP ,
 	myDAC.SPARE_DAC_3);
 
-	
+	#endif
 	
     int i=0,j=0;
 	char result1[4];
@@ -369,10 +369,11 @@ int main(int argc, char *argv[]) {
 		sprintf(result2,"%02x%02x", (int)mem[page_offset + i + 2], (int)mem[page_offset + i + 3]);
 		num1 = (int)mem[page_offset + i + 1];
 		num2 = (int)mem[page_offset + i + 3];
-		printf("num1 = %d, num2 = %d \n", num1, num2);
+		//printf("num1 = %d, num2 = %d \n", num1, num2);
 
-  keys.seat_switch = (num1 & 128)>>7;
-		keys.seat_occupy = ((num1 & 132)== 132)?1:0;
+        keys.seat_switch = (num1 & 128)>>7;
+		keys.seat_occupy = ((num1 & 4 )== 4)?1:0;
+	
 		keys.kill_switch_fit = (num2 & 16)>>4;
 		keys.kill_key_pressed = (num2 & 48)>>5;
 		keys.kill_k_pressed = (num2 & 112)>>6;
