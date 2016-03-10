@@ -6,126 +6,95 @@
 #include <stdint.h>
 #include <signal.h>
 #include <string.h>
-#include <poll.h>
-
-#define SEAT_HEIGHT_ADDR 0xC0000000 // ADC 0 memory address
-#define JSTIC_X_ADDR 0xC0000002 // ADC 1 memory address
-#define JSTIC_Y_ADDR 0xC0000004 // ADC 2 memory address
-#define LWD_MTR_SPD_ADDR 0xC0000006 // ADC 3 memory address
-#define RWD_MTR_SPD_ADDR 0xC0000008 // ADC 4 memory address
-#define TEST_WRP_INP_ADDR 0xC000000A // ADC 5 memory address
-#define SPARE_ADC_6_ADDR 0xC000000C // ADC 6 memory address
-#define SPARE_ADC_7_ADDR 0xC000000E // ADC 7 memory address
-
-#define GPIO_1_ADDR 0XC0000018 // GPIO 0 ADDRESS
-#define GPIO_2_ADDR 0XC000001C // GPIO 1 ADDRESS
-
-#define LWD_MTR_DMND_ADDR 0xC0000020 // DAC 0 memory address
-#define RWD_MTR_DMND_ADDR 0xC0000022 // DAC 1 memory address
-#define TEST_WRP_OP_ADDR 0xC0000024 // DAC 2 memory address
-#define SPARE_DAC_3_ADDR 0xC0000026 // DAC 3 memory address
-
-#define MIN_COUNT_RANGE 51
-#define MAX_COUNT_RANGE 970
-
-#define MIN_VOLT_RANGE 0.25
-#define MAX_VOLT_RANGE 4.75
-
-#define MIN_SEAT_HEIGHT_RANGE -1
-#define MAX_SEAT_HEIGHT_RANGE 6
-
-#define MIN_ENGG_UNIT_RANGE -100
-#define MAX_ENGG_UNIT_RANGE 100
-
-#define MIN_ENGG_UNIT_SPD_RANGE -200
-#define MAX_ENGG_UNIT_SPD_RANGE 200
-
-#define MIN_DAC_VOLT_RANGE -24
-#define MAX_DAC_VOLT_RANGE 24
-
-#define MIN_DAC_ENGG_UNIT_RANGE 0
-#define MAX_DAC_ENGG_UNIT_RANGE 1023
-
-void     INThandler(int);
-
-struct ADC
-{
-	uint16_t Seat_Height ;
-	uint16_t Joystic_X;
-	uint16_t Joystic_Y;
-	uint16_t LWD_MTR_SPD;
-	uint16_t RWD_MTR_SPD;
-	uint16_t TEST_WRAP_INP;
-	uint16_t Spare_ADC_6 ;
-	uint16_t Spare_ADC_7 ;
-	float Seat_Height_Volt;
-	float Joystic_X_Volt;
-	float Joystic_Y_Volt;
-	float LWD_MTR_SPD_Volt;
-	float RWD_MTR_SPD_Volt;
-	float TEST_WRAP_INP_Volt;
-	float Spare_ADC_6_Volt ;
-	float Spare_ADC_7_Volt ;
-	int Seat_Height_Engg_Unit;
-	int Joystic_X_Engg_Unit;
-	int Joystic_Y_Engg_Unit;
-	int LWD_MTR_SPD_Engg_Unit;
-	int RWD_MTR_SPD_Engg_Unit;
-	int TEST_WRAP_INP_Engg_Unit;
-	int Spare_ADC_6_Engg_Unit;
-	int Spare_ADC_7_Engg_Unit;
-};
-
-struct DAC{
-	int LWD_MTR_DMND ;
-	int RWD_MTR_DMND ;
-	int TEST_WRP_OP ;
-	int SPARE_DAC_3 ;
-	float LWD_MTR_DMND_Volt ;
-	float RWD_MTR_DMND_Volt ;
-	int LWD_MTR_DMND_Engg_Unit ;
-	int RWD_MTR_DMND_Engg_Unit ;
-};
-
-struct 
-{
-	int seat_switch;
-	int seat_occupy;
-	int kill_switch_fit;
-	int kill_key_pressed;
-	int kill_k_pressed;
-}keys;
+#include <math.h>
+#include "global.h"
 
 void findFault()
 {
-	printf("seat_switch = %d, seat_occupy = %d, kill_switch_fit = %d, kill_key_pressed = %d, kill_k_pressed = %d \n", 
-     keys.seat_switch, keys.seat_occupy,keys.kill_switch_fit, keys.kill_key_pressed, keys.kill_k_pressed);
-	
+    printf("\n================= MESSAGE ======================\n");
 	if(keys.kill_k_pressed == 1)
 	{
 		printf("Key K has been pressed - kill switch released ... \n");
+		faultFlag = 1;
 		return;
 	}
+
+	//RID 24A
 	if((keys.kill_switch_fit == 0) && (keys.kill_key_pressed == 1))
 	{
 		printf("FAULT DETECTED: Kill Switch Pressed When Switch Not Present !!! \n");
+		faultFlag = 1;
 		return;
 	}
 	
+	//RID 24B
 	if((keys.seat_switch == 0) && (keys.seat_occupy == 1))
 	{
 		printf("FAULT DETECTED: Seat Occupied When Switch Not Present !!! \n");
+		faultFlag = 1;
 		return;
 	}
 }
 
-struct ADC myADC ;
-struct DAC myDAC;
-int fd ;
-FILE *fptr;
-char fileop[25]="output.csv";
-unsigned char *mem;
-struct pollfd mypoll = { STDIN_FILENO, POLLIN|POLLPRI };
+void controlManager()
+{
+	//check if button press fault has been logged
+	//remember to call write_dac from here, and not from main
+	//Speed constraint comes here
+
+    if(keys.seat_switch == 0)
+	{
+		printf("Don't forget to switch on the seat switch ... \n");
+	}
+
+	if(faultFlag == 1)
+	{
+		myADC.left_motor_speed_demand = 0;
+        myADC.right_motor_speed_demand = 0;
+		write_dac();
+		return;
+	}
+	//RID 17
+	if(keys.seat_switch == 1 && keys.seat_occupy == 0)
+	{
+		printf("Wheelchair movement not allowed... Seat Unoccupied \n");
+		myADC.left_motor_speed_demand = 0;
+        myADC.right_motor_speed_demand = 0;
+	}
+    //RID 18 - if seat changes from occupied to unoccupied
+	if(keys.seat_occupy == 0)
+	{
+		myADC.left_motor_speed_demand = 0;
+        myADC.right_motor_speed_demand = 0;	
+	}
+
+	//RID 20 - don't move, if kill switch is true
+	if(keys.kill_switch_fit == 1 && keys.kill_key_pressed == 1)
+	{
+		printf("Wheelchair movement not allowed... Kill Switch Pressed \n");
+		myADC.left_motor_speed_demand = 0;
+        myADC.right_motor_speed_demand = 0;	
+	}
+
+	if(keys.kill_k_pressed == 1)
+	{
+		printf("Wheelchair movement not allowed... K Key Pressed \n");
+		myADC.left_motor_speed_demand = 0;
+        myADC.right_motor_speed_demand = 0;
+	} 
+	
+	//RID 21 - The controller shall reduce the chair speed by 50% if the seat position is above 5 inches
+	if(myADC.Seat_Height_Engg_Unit > 5)
+	{
+		printf("Reducing Speed by HALF as height beyong 5 Inches \n");
+		myADC.left_motor_speed_demand = myADC.left_motor_speed_demand>>1;
+        myADC.right_motor_speed_demand = myADC.right_motor_speed_demand>>1;
+		myADC.left_wheel_speed = rpm2mph(myADC.left_motor_speed_demand);
+        myADC.right_wheel_speed = rpm2mph(myADC.right_motor_speed_demand);
+	}
+    
+	write_dac();
+}
 
 float calcVolt(int input, float offset)
 {
@@ -162,6 +131,16 @@ int calcDACEnggUnit(float input)
 	return result;
 }
 
+float rpm2mph(int rpm)
+{
+    return(WHEEL_DIAMETER*PI*rpm*60);
+}
+
+float mph2rpm(float mph)
+{
+	return((mph/(WHEEL_DIAMETER*PI*60)));
+}
+
 float getMin(float a, float b)
 {
 	return (a<b)?a:b;
@@ -170,6 +149,21 @@ float getMin(float a, float b)
 float getMax(float a, float b)
 {
 	return (a>b)?a:b;
+}
+
+void speedLimitCheck()
+{
+	if(abs((int)myADC.left_wheel_speed) > (int)userSpeed )
+	{
+	   printf("Performing speed penalty on Left, going beyond permissible range...\n");
+       myADC.left_motor_speed_demand = mph2rpm(userSpeed);
+	}
+	
+	if( abs((int)myADC.right_wheel_speed) > (int)userSpeed )
+	{
+       printf("Performing speed penalty on Right, going beyond permissible range...\n");
+       myADC.right_motor_speed_demand = mph2rpm(userSpeed);
+	}
 }
 
 void read_adc(){
@@ -206,6 +200,12 @@ void read_adc(){
 	myADC.Spare_ADC_6_Engg_Unit = calcEnggUnit(myADC.Spare_ADC_6_Volt, -100);
 	myADC.Spare_ADC_7_Engg_Unit = calcEnggUnit(myADC.Spare_ADC_7_Volt, -100);
 
+	myADC.left_motor_speed_demand = 2.0 * (myADC.Joystic_Y_Engg_Unit + myADC.Joystic_X_Engg_Unit / 4.0);
+    myADC.right_motor_speed_demand = 2.0 * (myADC.Joystic_Y_Engg_Unit - myADC.Joystic_X_Engg_Unit / 4.0);
+
+    myADC.left_wheel_speed = rpm2mph(myADC.left_motor_speed_demand);
+    myADC.right_wheel_speed = rpm2mph(myADC.right_motor_speed_demand);
+
 	if(myADC.Seat_Height_Volt < 0.25 || myADC.Joystic_X_Volt < 0.25 || myADC.Joystic_Y_Volt < 0.25)
 	{
 		printf("The input value from the plant model is too low !!! \n");
@@ -224,9 +224,13 @@ void write_dac(){
     off_t page_base = (offset / pagesize) * pagesize;
     off_t pageOffset = offset - page_base;
 
-    myDAC.LWD_MTR_DMND_Volt = (getMin(getMax(myADC.Joystic_X_Engg_Unit,-100),100) / 100) * 24;
-	myDAC.LWD_MTR_DMND_Engg_Unit = calcDACEnggUnit(myDAC.LWD_MTR_DMND_Volt);
-	//printf("myDAC.LWD_MTR_DMND_Volt = %f :: myDAC.LWD_MTR_DMND_Engg_Unit = %d \n", myDAC.LWD_MTR_DMND_Volt, myDAC.LWD_MTR_DMND_Engg_Unit);
+	//After all the motor_speed_demand is nothing but engg unit
+	speedLimitCheck();
+	myDAC.left_motor_drive_gain = GAIN*myADC.left_motor_speed_demand;
+	myDAC.right_motor_drive_gain = GAIN*myADC.right_motor_speed_demand;
+    myDAC.LWD_MTR_DMND_Volt = myDAC.left_motor_drive_gain/8.33;
+	myDAC.LWD_MTR_DMND_Engg_Unit = (1023*(myDAC.LWD_MTR_DMND_Volt + 24))/48;
+	
 	dac0 = myDAC.LWD_MTR_DMND_Engg_Unit;
 	upper=0;
 	lower=0;
@@ -235,9 +239,8 @@ void write_dac(){
 	*(mem+pageOffset+0) = upper;
 	*(mem+pageOffset+1) = lower;
 
-    myDAC.RWD_MTR_DMND_Volt = (getMin(getMax(myADC.Joystic_Y_Engg_Unit,-100),100) / 100) * 24;
-	myDAC.RWD_MTR_DMND_Engg_Unit = calcDACEnggUnit(myDAC.RWD_MTR_DMND_Volt);
-	//printf("myDAC.RWD_MTR_DMND_Volt = %f :: myDAC.RWD_MTR_DMND_Engg_Unit = %d \n", myDAC.RWD_MTR_DMND_Volt, myDAC.RWD_MTR_DMND_Engg_Unit);
+    myDAC.RWD_MTR_DMND_Volt = myDAC.right_motor_drive_gain/8.33;
+	myDAC.RWD_MTR_DMND_Engg_Unit = (1023*(myDAC.RWD_MTR_DMND_Volt + 24))/48;
     dac1 = myDAC.RWD_MTR_DMND_Engg_Unit;
 		
 	upper=0;
@@ -246,7 +249,6 @@ void write_dac(){
 	lower= (int)dac1;
 	*(mem+pageOffset+2) = upper;
 	*(mem+pageOffset+3) = lower;
-
 
 	dac2 = 0;
 
@@ -265,18 +267,6 @@ void write_dac(){
 	lower= (int)dac3;
 	*(mem+pageOffset+6) = upper;
 	*(mem+pageOffset+7) = lower;
-	
-	/**(mem+pageOffset+0) = 0x03;
-	*(mem+pageOffset+1) = 0x80;
-	*(mem+pageOffset+2) = 0x03;
-	*(mem+pageOffset+3) = 0x80;
-    *(mem+pageOffset+4) = 0x03;
-	*(mem+pageOffset+5) = 0x80;
-	*(mem+pageOffset+6) = 0x03;
-	*(mem+pageOffset+7) = 0x80;*/
-	//} //end of if(poll)
-	
-	
 }
 void read_dac(){
 	off_t offset = 0xc0000020;
@@ -290,15 +280,31 @@ void read_dac(){
 	myDAC.SPARE_DAC_3 = ((int)mem[pageOffset+6+0]<<8 |(int)mem[pageOffset+6+1]);
 }
 
+void read_gpio()
+{
+	int num1=0,num2=0;
+	off_t offset = 0xc0000018;
+    size_t pagesize = sysconf(_SC_PAGE_SIZE);
+	off_t page_base = (offset / pagesize) * pagesize;
+    off_t page_offset = offset - page_base;
+	num1 = (int)mem[page_offset  + 1];
+	num2 = (int)mem[page_offset  + 3];
+
+	keys.seat_switch = (num1 & 128)>>7;
+	keys.seat_occupy = ((num1 & 4 )== 4)?1:0;
+
+	keys.kill_switch_fit = (num2 & 16)>>4;
+	keys.kill_key_pressed = (num2 & 48)>>5;
+	keys.kill_k_pressed = (num2 & 112)>>6;
+}
 
 int main(int argc, char *argv[]) {
 
-    if ((argc < 3)||(!strcmp(argv[2],"-of"))) {
-        printf("Usage: %s -of <filename.csv>\n", argv[0]);
-        return 0;
-    }
-	strcpy(fileop,argv[2]);
-	 signal(SIGINT, INThandler);
+	if (process_args(argc,argv))
+	{
+		return 0; 
+	}
+	signal(SIGINT, INThandler);
 	printf("\033[2J");
    printf("\033[2H");
     off_t offset = 0xc0000000;
@@ -324,67 +330,30 @@ int main(int argc, char *argv[]) {
 	read_adc();		
 			
 	read_dac();
-    #if 1
-	printf(" (ADC 0) :: Count = %d :: Volt = %f :: Engg = %d  \n" 
-		   " (ADC 1) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-		   " (ADC 2) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-		   " (ADC 3) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-		   " (ADC 4) :: Count = %d :: Volt = %f :: Engg = %d  \n",
-		   //" (ADC 5) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-		   //" (ADC 6) :: Count = %d :: Volt = %f :: Engg = %d  \n"
-		   //" (ADC 7) :: Count = %d :: Volt = %f :: Engg = %d  \n",
-	myADC.Seat_Height, myADC.Seat_Height_Volt, myADC.Seat_Height_Engg_Unit,
-	myADC.Joystic_X, myADC.Joystic_X_Volt, myADC.Joystic_X_Engg_Unit,
-	myADC.Joystic_Y, myADC.Joystic_Y_Volt, myADC.Joystic_Y_Engg_Unit,
-	myADC.LWD_MTR_SPD, myADC.LWD_MTR_SPD_Volt, myADC.LWD_MTR_SPD_Engg_Unit,
-	myADC.RWD_MTR_SPD, myADC.RWD_MTR_SPD_Volt, myADC.RWD_MTR_SPD_Engg_Unit
-	//myADC.TEST_WRAP_INP, myADC.TEST_WRAP_INP_Volt, myADC.TEST_WRAP_INP_Engg_Unit,
-	//myADC.Spare_ADC_6, myADC.Spare_ADC_6_Volt, myADC.Spare_ADC_6_Engg_Unit,
-	//myADC.Spare_ADC_7, myADC.Spare_ADC_7_Volt, myADC.Spare_ADC_7_Engg_Unit
-	);
-	
-	printf(" \n (DAC 0) = %d \n (DAC 1) = %d \n (DAC 2) = %d \n (DAC 3) = %d\n\n",
-	myDAC.LWD_MTR_DMND,
-	myDAC.RWD_MTR_DMND ,
-	myDAC.TEST_WRP_OP ,
-	myDAC.SPARE_DAC_3);
+    
+    printf("\n============ADC=============\n");
+    printf("X=%d :: Y = %d \n", myADC.Joystic_X,  myADC.Joystic_Y);
+	printf("Seat Height = %d \n", myADC.Seat_Height_Engg_Unit);
+	printf("Demand (RPM):: Left = %d :: Right = %d \n",
+		myADC.left_motor_speed_demand, myADC.right_motor_speed_demand);
 
-	#endif
+	printf("\n============DAC=============\n");
+	printf("\nLEFT DMND = %d :: LEFT Volt = %f \n"
+	       " RIGHT DMND = %d :: RIGHT Volt = %f \n",
+	myDAC.LWD_MTR_DMND, myDAC.LWD_MTR_DMND_Volt, myDAC.RWD_MTR_DMND, myDAC.RWD_MTR_DMND_Volt);
 	
-    int i=0,j=0;
-	char result1[4];
-	char result2[2];
-    int num1=0,num2=0;
-	//char gpio1[15];
-	//char gpio2[15];
-	memset(&result1, 0, sizeof(char)*4);
-	memset(&result2, 0, sizeof(char)*4);
-	offset = 0xc0000018;//strtoul(argv[1], NULL, 0);
-    len = 8;//strtoul(argv[2], NULL, 0);
-	 page_base = (offset / pagesize) * pagesize;
-     page_offset = offset - page_base;
-	
+	read_gpio();
 
-		sprintf(result1,"%02x%02x%02x%02x", (int)mem[page_offset + i], (int)mem[page_offset + i + 1],(int)mem[page_offset + i + 2], (int)mem[page_offset + i + 3]);
-		sprintf(result2,"%02x%02x", (int)mem[page_offset + i + 2], (int)mem[page_offset + i + 3]);
-		num1 = (int)mem[page_offset + i + 1];
-		num2 = (int)mem[page_offset + i + 3];
-		//printf("num1 = %d, num2 = %d \n", num1, num2);
+    if(keys.kill_k_pressed == 1)
+	{
+		keys.kill_switch_fit = 0;
+	}
+    printf("\n============GPIO=============\n");
+	printf("seat_switch = %d, seat_occupy = %d, kill_switch_fit = %d, kill_key_pressed = %d, K_KEY_pressed = %d \n", 
+    keys.seat_switch, keys.seat_occupy,keys.kill_switch_fit, keys.kill_key_pressed, keys.kill_k_pressed);
 
-        keys.seat_switch = (num1 & 128)>>7;
-		keys.seat_occupy = ((num1 & 4 )== 4)?1:0;
-	
-		keys.kill_switch_fit = (num2 & 16)>>4;
-		keys.kill_key_pressed = (num2 & 48)>>5;
-		keys.kill_k_pressed = (num2 & 112)>>6;
-		
-  if(keys.kill_k_pressed == 1)
-		{
-			keys.kill_switch_fit = 0;
-		}
-
-		findFault();
-	
+	findFault();
+	controlManager();
 	printf("\n");
 	fptr = fopen(fileop, "a");
 	fprintf(fptr, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d \n",
@@ -401,7 +370,6 @@ int main(int argc, char *argv[]) {
 			myDAC.TEST_WRP_OP ,
 			myDAC.SPARE_DAC_3); // write to csv in each update interval
 	fclose(fptr);
-	write_dac();
 	printf("\033[2J");
    printf("\033[2H");
    sleep(1);
@@ -414,9 +382,6 @@ void  INThandler(int sig)
      char  c;
 
      signal(sig, SIG_IGN);
-     //printf("\nDid you hit Ctrl-C?\n"
-       //     "Do you really want to quit? [y/n] ");
-    // c = getchar();
      if (1)//(c == 'y' || c == 'Y')
 	 {
 		 munmap(mem, 40);
@@ -428,4 +393,104 @@ void  INThandler(int sig)
      else
           signal(SIGINT, INThandler);
      getchar(); // Get new line character
+}
+
+int process_args(int argc,char *argv[])
+{
+	int i;
+	short error = 0;
+	if (argc==1)
+	{
+		error=1;
+		printf("Insufficient argument\n");
+		//return error;
+	}	
+	for( i=1; i<argc; ++i )
+	{
+		if(!strcmp(argv[i],"-g"))
+		{
+			/* user specified gain parameter */
+			++i;
+			if(i<argc)
+			{
+				gain = atoi(argv[i]);
+				if ((gain<0 )|| (gain >1))
+				{
+					printf( "ERROR: -g requires a value 0 to 1\n" );
+					error = 1;
+				}
+				
+				
+			}
+			else
+			{
+				printf( "ERROR: -g requires a value after it\n" );
+				error = 1;
+			}
+		}
+		else if(!strcmp(argv[i],"-S"))
+		{
+			/* user specified gain parameter */
+			++i;
+			if(i<argc)
+			{
+				userSpeed = atoi(argv[i]);
+				if ((userSpeed <1 )|| (userSpeed >10))
+				{
+					printf( "ERROR: -S requires a value 1 to 10 mph\n" );
+					error = 1;
+				}
+				
+				
+			}
+			else
+			{
+				printf( "ERROR: -S requires a value after it\n" );
+				error = 1;
+			}
+		}
+		
+		
+		else if(!strcmp(argv[i],"-of"))
+		{
+			/* Duration provided */
+			++i;
+			if((i<argc)&&(((strcmp(argv[i],"-g"))||(strcmp(argv[i],"-S")))))
+			{
+				
+				strcpy(fileop,argv[i]);
+				
+				
+				
+			}
+			else
+			{
+				printf( "ERROR: -of requires a proper filename after it. check the commnad\n" );
+				error = 1;
+			}
+		}
+		else if(!strcmp(argv[i],"-h"))
+		{
+			/* command line args description requested */
+			error = 1;
+		}
+		else
+		{
+			printf( "ERROR: unknown commandline option - %s\n", argv[i] );
+			error = 1;
+		}
+	}
+	if(error)
+	{
+		/* Print commandline arg help message and return true */
+		printf( "Usage: ./virtu_read [options]\n"
+		  "Allowed commandline options \n"
+		  "\n"
+		  "\t-S userSpeed     User specified userSpeed from 1 to 10 mph\n"
+		  "\t-g gain      gain from 0 to 1\n"
+		  "\t-of fileName output filename in *.csv format.\n"
+		  "\t-h           Display this help message\n"
+		  "\n" );
+	}
+	return error;
 }

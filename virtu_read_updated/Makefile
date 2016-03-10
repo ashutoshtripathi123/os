@@ -14,8 +14,10 @@ SOURCE =	virtu_read.c
 
 TARGET =	virtu_read
 
+INC_DIR = .
+
 $(TARGET):	virtu_read.c $(LIBS)
-	$(CC) $(CCFLAGS) -o $(TARGET) virtu_read.c  $(LDFLAGS)
+	$(CC) $(CCFLAGS) -o $(TARGET) virtu_read.c  $(LDFLAGS) -I$(INC_DIR)
 
 .PHONY: clean
 .PHONY: copy
