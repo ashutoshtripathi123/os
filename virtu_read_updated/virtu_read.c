@@ -1,4 +1,4 @@
-#include <stdio.h>
+/*#include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -7,165 +7,12 @@
 #include <signal.h>
 #include <string.h>
 #include <math.h>
+*/
 #include "global.h"
 
-void findFault()
-{
-    printf("\n================= MESSAGE ======================\n");
-	if(keys.kill_k_pressed == 1)
-	{
-		printf("Key K has been pressed - kill switch released ... \n");
-		faultFlag = 1;
-		return;
-	}
-
-	//RID 24A
-	if((keys.kill_switch_fit == 0) && (keys.kill_key_pressed == 1))
-	{
-		printf("FAULT DETECTED: Kill Switch Pressed When Switch Not Present !!! \n");
-		faultFlag = 1;
-		return;
-	}
-	
-	//RID 24B
-	if((keys.seat_switch == 0) && (keys.seat_occupy == 1))
-	{
-		printf("FAULT DETECTED: Seat Occupied When Switch Not Present !!! \n");
-		faultFlag = 1;
-		return;
-	}
-}
-
-void controlManager()
-{
-	//check if button press fault has been logged
-	//remember to call write_dac from here, and not from main
-	//Speed constraint comes here
-
-    if(keys.seat_switch == 0)
-	{
-		printf("Don't forget to switch on the seat switch ... \n");
-	}
-
-	if(faultFlag == 1)
-	{
-		myADC.left_motor_speed_demand = 0;
-        myADC.right_motor_speed_demand = 0;
-		write_dac();
-		return;
-	}
-	//RID 17
-	if(keys.seat_switch == 1 && keys.seat_occupy == 0)
-	{
-		printf("Wheelchair movement not allowed... Seat Unoccupied \n");
-		myADC.left_motor_speed_demand = 0;
-        myADC.right_motor_speed_demand = 0;
-	}
-    //RID 18 - if seat changes from occupied to unoccupied
-	if(keys.seat_occupy == 0)
-	{
-		myADC.left_motor_speed_demand = 0;
-        myADC.right_motor_speed_demand = 0;	
-	}
-
-	//RID 20 - don't move, if kill switch is true
-	if(keys.kill_switch_fit == 1 && keys.kill_key_pressed == 1)
-	{
-		printf("Wheelchair movement not allowed... Kill Switch Pressed \n");
-		myADC.left_motor_speed_demand = 0;
-        myADC.right_motor_speed_demand = 0;	
-	}
-
-	if(keys.kill_k_pressed == 1)
-	{
-		printf("Wheelchair movement not allowed... K Key Pressed \n");
-		myADC.left_motor_speed_demand = 0;
-        myADC.right_motor_speed_demand = 0;
-	} 
-	
-	//RID 21 - The controller shall reduce the chair speed by 50% if the seat position is above 5 inches
-	if(myADC.Seat_Height_Engg_Unit > 5)
-	{
-		printf("Reducing Speed by HALF as height beyong 5 Inches \n");
-		myADC.left_motor_speed_demand = myADC.left_motor_speed_demand>>1;
-        myADC.right_motor_speed_demand = myADC.right_motor_speed_demand>>1;
-		myADC.left_wheel_speed = rpm2mph(myADC.left_motor_speed_demand);
-        myADC.right_wheel_speed = rpm2mph(myADC.right_motor_speed_demand);
-	}
-    
-	write_dac();
-}
-
-float calcVolt(int input, float offset)
-{
-	float result;
-	result =  (input - MIN_COUNT_RANGE)*(MAX_VOLT_RANGE - MIN_VOLT_RANGE)/(MAX_COUNT_RANGE-MIN_COUNT_RANGE) + offset;
-	return result;
-}
-
-int calcEnggUnit(float input, int offset)
-{
-	int result;
-	result = (input - MIN_VOLT_RANGE)*(MAX_ENGG_UNIT_RANGE - MIN_ENGG_UNIT_RANGE)/(MAX_VOLT_RANGE-MIN_VOLT_RANGE) + offset;
-	return result;
-}
-
-int calcEnggUnitForChair(float input)
-{
-    int result;
-	result = (input - MIN_VOLT_RANGE)*(MAX_SEAT_HEIGHT_RANGE-MIN_SEAT_HEIGHT_RANGE)/(MAX_VOLT_RANGE-MIN_VOLT_RANGE) -1;
-	return result;
-}
-
-int calcEnggUnitForSpd(float input, int offset)
-{
-    int result;
-	result = (input - MIN_VOLT_RANGE)*(MAX_ENGG_UNIT_SPD_RANGE-MIN_ENGG_UNIT_SPD_RANGE)/(MAX_VOLT_RANGE-MIN_VOLT_RANGE) +offset;
-	return result;
-}
-
-int calcDACEnggUnit(float input)
-{
-    int result;
-	result = (input - MIN_DAC_VOLT_RANGE)*(MAX_DAC_ENGG_UNIT_RANGE-MIN_DAC_ENGG_UNIT_RANGE)/(MAX_DAC_VOLT_RANGE-MIN_DAC_VOLT_RANGE);
-	return result;
-}
-
-float rpm2mph(int rpm)
-{
-    return(WHEEL_DIAMETER*PI*rpm*60);
-}
-
-float mph2rpm(float mph)
-{
-	return((mph/(WHEEL_DIAMETER*PI*60)));
-}
-
-float getMin(float a, float b)
-{
-	return (a<b)?a:b;
-}
-
-float getMax(float a, float b)
-{
-	return (a>b)?a:b;
-}
-
-void speedLimitCheck()
-{
-	if(abs((int)myADC.left_wheel_speed) > (int)userSpeed )
-	{
-	   printf("Performing speed penalty on Left, going beyond permissible range...\n");
-       myADC.left_motor_speed_demand = mph2rpm(userSpeed);
-	}
-	
-	if( abs((int)myADC.right_wheel_speed) > (int)userSpeed )
-	{
-       printf("Performing speed penalty on Right, going beyond permissible range...\n");
-       myADC.right_motor_speed_demand = mph2rpm(userSpeed);
-	}
-}
-
+float userSpeed = 10.0;
+char fileop[25]="output.csv";
+static void file_writer(int sig, siginfo_t *si, void *uc);
 void read_adc(){
 	off_t offset = 0xc0000000;
     //size_t len = 40;
@@ -226,8 +73,56 @@ void write_dac(){
 
 	//After all the motor_speed_demand is nothing but engg unit
 	speedLimitCheck();
+	
+	#if 0
+	switch(methodOfCalculatingDac)
+	{
+		case 0:
+		{
+			myDAC.left_motor_drive_gain = GAIN*myADC.left_motor_speed_demand;
+	        myDAC.right_motor_drive_gain = GAIN*myADC.right_motor_speed_demand;
+		}
+		break;
+		case 1:
+		{
+			//Integration Algorithm
+			myDAC.left_motor_drive_gain = (myADC.left_motor_speed_demand*(GAIN/**userDurationExpired*/))+output_state_x;
+	        myDAC.right_motor_drive_gain = (myADC.right_motor_speed_demand*(GAIN/**userDurationExpired*/))+output_state_y;
+			if(myDAC.left_motor_drive_gain > 200)
+			{
+				output_state_x = 200;
+			}
+			if(myDAC.right_motor_drive_gain > 200)
+			{
+				output_state_y = 200;
+			}
+			if(myDAC.left_motor_drive_gain < -200 && myDAC.right_motor_drive_gain < -200)
+			{
+				output_state_x = -200;
+			}
+			if(myDAC.right_motor_drive_gain < -200)
+			{
+				output_state_y = -200;
+			}
+			else
+			{
+				output_state_x =  myDAC.left_motor_drive_gain;
+				output_state_y =  myDAC.right_motor_drive_gain;
+			}
+		}
+			break;
+		case 2:
+			//Derivative Algorithm
+			myDAC.left_motor_drive_gain = (myADC.left_motor_speed_demand - input_state_x);//*(1/userDurationExpired);
+	        myDAC.right_motor_drive_gain = (myADC.right_motor_speed_demand - input_state_y);//*(1/userDurationExpired);
+			input_state_x = myDAC.left_motor_drive_gain;
+			input_state_y = myDAC.right_motor_drive_gain;
+			break;
+	}
+	#endif
 	myDAC.left_motor_drive_gain = GAIN*myADC.left_motor_speed_demand;
 	myDAC.right_motor_drive_gain = GAIN*myADC.right_motor_speed_demand;
+
     myDAC.LWD_MTR_DMND_Volt = myDAC.left_motor_drive_gain/8.33;
 	myDAC.LWD_MTR_DMND_Engg_Unit = (1023*(myDAC.LWD_MTR_DMND_Volt + 24))/48;
 	
@@ -305,6 +200,38 @@ int main(int argc, char *argv[]) {
 		return 0; 
 	}
 	signal(SIGINT, INThandler);
+	sig_ev.sigev_notify = SIGEV_SIGNAL;
+	sig_ev.sigev_signo = SIGRTMIN;
+	sig_ev.sigev_value.sival_ptr = &timerid;
+	
+	action.sa_flags = SA_SIGINFO;
+	action.sa_sigaction = file_writer;
+	//action.sa_handler = sig_handler;
+	if(sigaction(SIGRTMIN, &action, NULL) == -1) {
+	  printf( "\tError establishing signal handler. Exiting...\n" );
+	  return;
+	} else {
+	  printf( "\tTimer routine attached as signal handler\n" );
+	}
+
+	if(timer_create(CLOCK_REALTIME, &sig_ev, &timerid) == -1) {
+	  printf( "\tUnable to create timer.  Exiting...\n" );
+	  return;
+	} else {
+	  printf( "\tTimer created. (ID = 0x%lx)\n", (long)timerid );
+	}
+
+    timer_spec.it_value.tv_sec = 1.0;
+	timer_spec.it_value.tv_nsec = 0;//1 ms timer tick
+	timer_spec.it_interval.tv_sec = timer_spec.it_value.tv_sec;
+	timer_spec.it_interval.tv_nsec = timer_spec.it_value.tv_nsec;
+
+	if(timer_settime(timerid, 0, &timer_spec, NULL) == -1) {
+	  printf( "\tError during timer setup and starting\n" );
+	} else {
+	  printf( "\tTimer setup and started.\n" );
+	}
+
 	printf("\033[2J");
    printf("\033[2H");
     off_t offset = 0xc0000000;
@@ -316,7 +243,7 @@ int main(int argc, char *argv[]) {
 	if(access(fileop,F_OK)!=-1)
 			remove(fileop);
 	fptr = fopen(fileop, "a");
-	fprintf(fptr, "ADC0, ADC1, ADC2, ADC3, ADC4, ADC5, ADC6, ADC7, DAC0, DAC1,DAC2,DAC3\n");
+	fprintf(fptr, "ADC0, ADC1, ADC2, ADC3, ADC4, ADC5, ADC6, ADC7, DAC0, DAC1, DAC2, DAC3, Time\n");
 	fclose(fptr);
 
     fd = open("/dev/mem", O_RDWR |  O_SYNC);
@@ -355,6 +282,7 @@ int main(int argc, char *argv[]) {
 	findFault();
 	controlManager();
 	printf("\n");
+	#if 0
 	fptr = fopen(fileop, "a");
 	fprintf(fptr, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d \n",
 		    myADC.Seat_Height,
@@ -370,10 +298,17 @@ int main(int argc, char *argv[]) {
 			myDAC.TEST_WRP_OP ,
 			myDAC.SPARE_DAC_3); // write to csv in each update interval
 	fclose(fptr);
+	#endif
 	printf("\033[2J");
    printf("\033[2H");
    sleep(1);
+	if(userDurationExpired == userDuration)
+	{
+		munmap(mem, 40);
+		close(fd);
+		exit(1);
 	}
+  }//while(1) ends
     return 0;
 
 }
@@ -395,102 +330,23 @@ void  INThandler(int sig)
      getchar(); // Get new line character
 }
 
-int process_args(int argc,char *argv[])
+static void file_writer(int sig, siginfo_t *si, void *uc)
 {
-	int i;
-	short error = 0;
-	if (argc==1)
-	{
-		error=1;
-		printf("Insufficient argument\n");
-		//return error;
-	}	
-	for( i=1; i<argc; ++i )
-	{
-		if(!strcmp(argv[i],"-g"))
-		{
-			/* user specified gain parameter */
-			++i;
-			if(i<argc)
-			{
-				gain = atoi(argv[i]);
-				if ((gain<0 )|| (gain >1))
-				{
-					printf( "ERROR: -g requires a value 0 to 1\n" );
-					error = 1;
-				}
-				
-				
-			}
-			else
-			{
-				printf( "ERROR: -g requires a value after it\n" );
-				error = 1;
-			}
-		}
-		else if(!strcmp(argv[i],"-S"))
-		{
-			/* user specified gain parameter */
-			++i;
-			if(i<argc)
-			{
-				userSpeed = atoi(argv[i]);
-				if ((userSpeed <1 )|| (userSpeed >10))
-				{
-					printf( "ERROR: -S requires a value 1 to 10 mph\n" );
-					error = 1;
-				}
-				
-				
-			}
-			else
-			{
-				printf( "ERROR: -S requires a value after it\n" );
-				error = 1;
-			}
-		}
-		
-		
-		else if(!strcmp(argv[i],"-of"))
-		{
-			/* Duration provided */
-			++i;
-			if((i<argc)&&(((strcmp(argv[i],"-g"))||(strcmp(argv[i],"-S")))))
-			{
-				
-				strcpy(fileop,argv[i]);
-				
-				
-				
-			}
-			else
-			{
-				printf( "ERROR: -of requires a proper filename after it. check the commnad\n" );
-				error = 1;
-			}
-		}
-		else if(!strcmp(argv[i],"-h"))
-		{
-			/* command line args description requested */
-			error = 1;
-		}
-		else
-		{
-			printf( "ERROR: unknown commandline option - %s\n", argv[i] );
-			error = 1;
-		}
-	}
-	if(error)
-	{
-		/* Print commandline arg help message and return true */
-		printf( "Usage: ./virtu_read [options]\n"
-		  "Allowed commandline options \n"
-		  "\n"
-		  "\t-S userSpeed     User specified userSpeed from 1 to 10 mph\n"
-		  "\t-g gain      gain from 0 to 1\n"
-		  "\t-of fileName output filename in *.csv format.\n"
-		  "\t-h           Display this help message\n"
-		  "\n" );
-	}
-	return error;
+	fptr = fopen(fileop, "a");
+	fprintf(fptr, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d \n",
+		    myADC.Seat_Height,
+			myADC.Joystic_X,
+			myADC.Joystic_Y,
+			myADC.LWD_MTR_SPD,
+			myADC.RWD_MTR_SPD,
+			myADC.TEST_WRAP_INP,
+			myADC.Spare_ADC_6 ,
+			myADC.Spare_ADC_7,
+			myDAC.LWD_MTR_DMND,
+			myDAC.RWD_MTR_DMND ,
+			myDAC.TEST_WRP_OP ,
+			myDAC.SPARE_DAC_3,
+		    userDurationExpired); // write to csv in each update interval
+	fclose(fptr);
+	++userDurationExpired;
 }

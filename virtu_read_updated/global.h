@@ -1,3 +1,12 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <stdint.h>
+#include <signal.h>
+#include <string.h>
+#include <math.h>
 
 #define SEAT_HEIGHT_ADDR 0xC0000000 // ADC 0 memory address
 #define JSTIC_X_ADDR 0xC0000002 // ADC 1 memory address
@@ -95,18 +104,44 @@ struct KEY
 	int kill_k_pressed;
 };
 
-void     INThandler(int);
+void INThandler(int);
 struct ADC myADC ;
 struct DAC myDAC;
 struct KEY keys;
 int fd ;
 FILE *fptr;
-char fileop[25]="output.csv";
+extern char fileop[25];
 unsigned char *mem;
-float userSpeed = 10.0;
+extern float userSpeed;
 float gain;
 static int faultFlag;
+unsigned int userDuration;
+unsigned int userDurationExpired;
+struct sigevent sig_ev;
+struct itimerspec timer_spec;
+timer_t timerid;
+sigset_t mask;
+struct sigaction action;
+int methodOfCalculatingDac;//Will be either Straight Through, Integration, or Derivative
+static int output_state_x;//to be used by integration
+static int output_state_y;//to be used by integration
+
+static int input_state_x;//to be used by derivative
+static int input_state_y;//to be used by derivative
+
+
 void write_dac();
 int process_args(int argc,char *argv[]);
 float rpm2mph(int rpm);
 float mph2rpm(float mph);
+void speedLimitCheck();
+float getMax(float a, float b);
+float getMin(float a, float b);
+int calcDACEnggUnit(float input);
+int calcEnggUnitForSpd(float input, int offset);
+int calcEnggUnitForChair(float input);
+int calcEnggUnit(float input, int offset);
+float calcVolt(int input, float offset);
+void controlManager();
+void findFault();
+void fault_sig_handler(int sig, siginfo_t *si, void *uc);
