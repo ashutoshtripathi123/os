@@ -9,7 +9,7 @@
 #include <math.h>
 */
 #include "global.h"
-
+unsigned int count1sec=1;
 float userSpeed = 10.0;
 char fileop[25]="output.csv";
 static void file_writer(int sig, siginfo_t *si, void *uc);
@@ -74,54 +74,63 @@ void write_dac(){
 	//After all the motor_speed_demand is nothing but engg unit
 	speedLimitCheck();
 	
-	#if 0
+	#if 1
 	switch(methodOfCalculatingDac)
 	{
 		case 0:
-		{
+		{   //Straight Through
 			myDAC.left_motor_drive_gain = GAIN*myADC.left_motor_speed_demand;
 	        myDAC.right_motor_drive_gain = GAIN*myADC.right_motor_speed_demand;
 		}
 		break;
 		case 1:
 		{
+			//PID Calculation:
 			//Integration Algorithm
-			myDAC.left_motor_drive_gain = (myADC.left_motor_speed_demand*(GAIN/**userDurationExpired*/))+output_state_x;
-	        myDAC.right_motor_drive_gain = (myADC.right_motor_speed_demand*(GAIN/**userDurationExpired*/))+output_state_y;
-			if(myDAC.left_motor_drive_gain > 200)
+			//kp=1.2;
+			kix = (myADC.left_motor_speed_demand*(GAIN*1))+output_state_x; // userDurationExpired has been replaced with 0.1
+	        kiy = (myADC.right_motor_speed_demand*(GAIN*1))+output_state_y;
+			if(kix > 200)
 			{
 				output_state_x = 200;
 			}
-			if(myDAC.right_motor_drive_gain > 200)
-			{
-				output_state_y = 200;
-			}
-			if(myDAC.left_motor_drive_gain < -200 && myDAC.right_motor_drive_gain < -200)
+			else if(kix < -200 )
 			{
 				output_state_x = -200;
 			}
-			if(myDAC.right_motor_drive_gain < -200)
+			else
+			{
+				output_state_x = kix;
+			}
+
+			if(kiy > 200)
+			{
+				output_state_y = 200;
+			}
+			else if(kiy < -200)
 			{
 				output_state_y = -200;
 			}
 			else
 			{
-				output_state_x =  myDAC.left_motor_drive_gain;
-				output_state_y =  myDAC.right_motor_drive_gain;
+				output_state_y =  kiy;
 			}
-		}
-			break;
-		case 2:
+	
 			//Derivative Algorithm
-			myDAC.left_motor_drive_gain = (myADC.left_motor_speed_demand - input_state_x);//*(1/userDurationExpired);
-	        myDAC.right_motor_drive_gain = (myADC.right_motor_speed_demand - input_state_y);//*(1/userDurationExpired);
-			input_state_x = myDAC.left_motor_drive_gain;
-			input_state_y = myDAC.right_motor_drive_gain;
-			break;
+			kdx = (myADC.left_motor_speed_demand - input_state_x)*(1/1);
+	        kdy = (myADC.right_motor_speed_demand - input_state_y)*(1/1);
+			input_state_x = kdx;
+			input_state_y = kdy;
+
+			kpx = 1.2;//*(myADC.LWD_MTR_SPD - myADC.left_motor_speed_demand));
+			kpy = 1.2;//*(myADC.RWD_MTR_SPD - myADC.right_motor_speed_demand));
+	     }
+		 printf("Speed Demand = %d, Left Motor Speed = %d \n", myADC.left_motor_speed_demand, myADC.LWD_MTR_SPD);
+         myDAC.left_motor_drive_gain = kpx+kix+kdx;
+         myDAC.right_motor_drive_gain = kpy+kiy+kdy;
+		 break;
 	}
 	#endif
-	myDAC.left_motor_drive_gain = GAIN*myADC.left_motor_speed_demand;
-	myDAC.right_motor_drive_gain = GAIN*myADC.right_motor_speed_demand;
 
     myDAC.LWD_MTR_DMND_Volt = myDAC.left_motor_drive_gain/8.33;
 	myDAC.LWD_MTR_DMND_Engg_Unit = (1023*(myDAC.LWD_MTR_DMND_Volt + 24))/48;
@@ -221,8 +230,8 @@ int main(int argc, char *argv[]) {
 	  printf( "\tTimer created. (ID = 0x%lx)\n", (long)timerid );
 	}
 
-    timer_spec.it_value.tv_sec = 1.0;
-	timer_spec.it_value.tv_nsec = 0;//1 ms timer tick
+    timer_spec.it_value.tv_sec = 1.0;//0.0;
+	timer_spec.it_value.tv_nsec = 0.0;//100000000;//0.1sec timer tick
 	timer_spec.it_interval.tv_sec = timer_spec.it_value.tv_sec;
 	timer_spec.it_interval.tv_nsec = timer_spec.it_value.tv_nsec;
 
@@ -232,8 +241,8 @@ int main(int argc, char *argv[]) {
 	  printf( "\tTimer setup and started.\n" );
 	}
 
-	printf("\033[2J");
-   printf("\033[2H");
+	//printf("\033[2J");
+    //printf("\033[2H");
     off_t offset = 0xc0000000;
     size_t len = 40;
     // Truncate offset to a multiple of the page size, or mmap will fail.
@@ -257,8 +266,15 @@ int main(int argc, char *argv[]) {
 	read_adc();		
 			
 	read_dac();
-    
-    printf("\n============ADC=============\n");
+	
+	read_gpio();
+
+    if(keys.kill_k_pressed == 1)
+	{
+		keys.kill_switch_fit = 0;
+	}    
+    #if 0
+	printf("\n============ADC=============\n");
     printf("X=%d :: Y = %d \n", myADC.Joystic_X,  myADC.Joystic_Y);
 	printf("Seat Height = %d \n", myADC.Seat_Height_Engg_Unit);
 	printf("Demand (RPM):: Left = %d :: Right = %d \n",
@@ -269,19 +285,14 @@ int main(int argc, char *argv[]) {
 	       " RIGHT DMND = %d :: RIGHT Volt = %f \n",
 	myDAC.LWD_MTR_DMND, myDAC.LWD_MTR_DMND_Volt, myDAC.RWD_MTR_DMND, myDAC.RWD_MTR_DMND_Volt);
 	
-	read_gpio();
-
-    if(keys.kill_k_pressed == 1)
-	{
-		keys.kill_switch_fit = 0;
-	}
     printf("\n============GPIO=============\n");
 	printf("seat_switch = %d, seat_occupy = %d, kill_switch_fit = %d, kill_key_pressed = %d, K_KEY_pressed = %d \n", 
     keys.seat_switch, keys.seat_occupy,keys.kill_switch_fit, keys.kill_key_pressed, keys.kill_k_pressed);
+    #endif
 
 	findFault();
 	controlManager();
-	printf("\n");
+	//printf("\n");
 	#if 0
 	fptr = fopen(fileop, "a");
 	fprintf(fptr, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d \n",
@@ -299,8 +310,8 @@ int main(int argc, char *argv[]) {
 			myDAC.SPARE_DAC_3); // write to csv in each update interval
 	fclose(fptr);
 	#endif
-	printf("\033[2J");
-   printf("\033[2H");
+   //printf("\033[2J");
+   //printf("\033[2H");
    sleep(1);
 	if(userDurationExpired == userDuration)
 	{
@@ -332,6 +343,11 @@ void  INThandler(int sig)
 
 static void file_writer(int sig, siginfo_t *si, void *uc)
 {
+	
+	if(count1sec==10 || 1)
+	{
+		//printf("myDAC.left_motor_drive_gain = %d :: myDAC.right_motor_drive_gain = %d \n",
+		//	myDAC.left_motor_drive_gain, myDAC.right_motor_drive_gain);
 	fptr = fopen(fileop, "a");
 	fprintf(fptr, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d \n",
 		    myADC.Seat_Height,
@@ -348,5 +364,11 @@ static void file_writer(int sig, siginfo_t *si, void *uc)
 			myDAC.SPARE_DAC_3,
 		    userDurationExpired); // write to csv in each update interval
 	fclose(fptr);
-	++userDurationExpired;
+	count1sec=0;
+	userDurationExpired++;
+	}
+	
+	count1sec++;
+	
+		
 }

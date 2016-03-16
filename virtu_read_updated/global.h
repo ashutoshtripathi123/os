@@ -129,6 +129,8 @@ static int output_state_y;//to be used by integration
 static int input_state_x;//to be used by derivative
 static int input_state_y;//to be used by derivative
 
+int kix,kiy,kdx,kdy,kpx, kpy;
+
 
 void write_dac();
 int process_args(int argc,char *argv[]);
