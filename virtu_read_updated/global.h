@@ -7,6 +7,8 @@
 #include <signal.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
+#include <sys/timeb.h>
 
 #define SEAT_HEIGHT_ADDR 0xC0000000 // ADC 0 memory address
 #define JSTIC_X_ADDR 0xC0000002 // ADC 1 memory address
@@ -117,11 +119,11 @@ float gain;
 static int faultFlag;
 unsigned int userDuration;
 unsigned int userDurationExpired;
-struct sigevent sig_ev;
-struct itimerspec timer_spec;
-timer_t timerid;
+struct sigevent sig_ev_file, sig_ev_chair, sig_ev_print;
+struct itimerspec timer_spec, timer_spec1, timer_spec2;
+timer_t timerid, timerid1, timerid2;
 sigset_t mask;
-struct sigaction action;
+struct sigaction action, action1, action2;
 int methodOfCalculatingDac;//Will be either Straight Through, Integration, or Derivative
 static int output_state_x;//to be used by integration
 static int output_state_y;//to be used by integration
@@ -131,6 +133,11 @@ static int input_state_y;//to be used by derivative
 
 int kix,kiy,kdx,kdy,kpx, kpy;
 
+int controlManagerCount, fileWriteCount, printCount;
+float controlManagerAvg, fileWriteAvg, printAvg;
+float controlManagerDiff, fileWriteDiff, printDiff;
+float ctrlMinorSave, fileWriteMinorSave, printMinorSave;
+float ctrlMinorExec, fileWriteMinorExec, printMinorExec;
 
 void write_dac();
 int process_args(int argc,char *argv[]);
@@ -145,5 +152,9 @@ int calcEnggUnitForChair(float input);
 int calcEnggUnit(float input, int offset);
 float calcVolt(int input, float offset);
 void controlManager();
+void chairControllerLogic();
+void printOnScreen();
 void findFault();
 void fault_sig_handler(int sig, siginfo_t *si, void *uc);
+float limit(float input, float upper_limit, float lower_limit);
+void file_writer(int sig, siginfo_t *si, void *uc);

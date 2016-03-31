@@ -2,7 +2,7 @@
 #include "global.h"
 void findFault()
 {
-    printf("\n================= MESSAGE ======================\n");
+    //printf("\n================= MESSAGE ======================\n");
 	if(keys.kill_k_pressed == 1)
 	{
 		printf("Key K has been pressed - kill switch released ... \n");

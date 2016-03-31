@@ -1,18 +1,15 @@
-/*#include <stdio.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <unistd.h>
-#include <stdint.h>
-#include <signal.h>
-#include <string.h>
-#include <math.h>
-*/
+
 #include "global.h"
 unsigned int count1sec=1;
 float userSpeed = 10.0;
 char fileop[25]="output.csv";
-static void file_writer(int sig, siginfo_t *si, void *uc);
+float KP = 100;//2.2;
+float KI = 0;//3.2;
+float KD = 0;//0.3;
+static float error_left, integral_left, derivative_left, error_left_previous; 
+static float error_right, integral_right, derivative_right, error_right_previous;
+//static void file_writer(int sig, siginfo_t *si, void *uc);
+
 void read_adc(){
 	off_t offset = 0xc0000000;
     //size_t len = 40;
@@ -61,7 +58,6 @@ void read_adc(){
 	{
 		printf("The input value from the plant model is too High !!! \n");
 	}
-
 }
 void write_dac(){
 	int dac0,dac1,dac2,dac3;
@@ -79,22 +75,23 @@ void write_dac(){
 	{
 		case 0:
 		{   //Straight Through
-			myDAC.left_motor_drive_gain = GAIN*myADC.left_motor_speed_demand;
-	        myDAC.right_motor_drive_gain = GAIN*myADC.right_motor_speed_demand;
+			myDAC.left_motor_drive_gain = gain*myADC.left_motor_speed_demand;
+	        myDAC.right_motor_drive_gain = gain*myADC.right_motor_speed_demand;
 		}
 		break;
 		case 1:
 		{
+			#if 1
 			//PID Calculation:
 			//Integration Algorithm
 			//kp=1.2;
-			kix = (myADC.left_motor_speed_demand*(GAIN*1))+output_state_x; // userDurationExpired has been replaced with 0.1
-	        kiy = (myADC.right_motor_speed_demand*(GAIN*1))+output_state_y;
+			kix = (myADC.left_motor_speed_demand*(gain*1))+output_state_x; // userDurationExpired has been replaced with 0.1
+	        kiy = (myADC.right_motor_speed_demand*(gain*1))+output_state_y;
 			if(kix > 200)
 			{
 				output_state_x = 200;
 			}
-			else if(kix < -200 )
+			else if(kix < -200)
 			{
 				output_state_x = -200;
 			}
@@ -122,13 +119,14 @@ void write_dac(){
 			input_state_x = kdx;
 			input_state_y = kdy;
 
-			kpx = 1.2;//*(myADC.LWD_MTR_SPD - myADC.left_motor_speed_demand));
-			kpy = 1.2;//*(myADC.RWD_MTR_SPD - myADC.right_motor_speed_demand));
+			kpx = 1;//(myADC.LWD_MTR_SPD - myADC.left_motor_speed_demand));
+			kpy = 1;//2.76;//100;//*(myADC.RWD_MTR_SPD - myADC.right_motor_speed_demand));
 	     }
 		 printf("Speed Demand = %d, Left Motor Speed = %d \n", myADC.left_motor_speed_demand, myADC.LWD_MTR_SPD);
-         myDAC.left_motor_drive_gain = kpx+kix+kdx;
-         myDAC.right_motor_drive_gain = kpy+kiy+kdy;
-		 break;
+         myDAC.left_motor_drive_gain = kpx+(kix)+(kdx);
+         myDAC.right_motor_drive_gain = kpy+(kiy)+(kdy);
+		 #endif
+		break;
 	}
 	#endif
 
@@ -209,40 +207,8 @@ int main(int argc, char *argv[]) {
 		return 0; 
 	}
 	signal(SIGINT, INThandler);
-	sig_ev.sigev_notify = SIGEV_SIGNAL;
-	sig_ev.sigev_signo = SIGRTMIN;
-	sig_ev.sigev_value.sival_ptr = &timerid;
-	
-	action.sa_flags = SA_SIGINFO;
-	action.sa_sigaction = file_writer;
-	//action.sa_handler = sig_handler;
-	if(sigaction(SIGRTMIN, &action, NULL) == -1) {
-	  printf( "\tError establishing signal handler. Exiting...\n" );
-	  return;
-	} else {
-	  printf( "\tTimer routine attached as signal handler\n" );
-	}
 
-	if(timer_create(CLOCK_REALTIME, &sig_ev, &timerid) == -1) {
-	  printf( "\tUnable to create timer.  Exiting...\n" );
-	  return;
-	} else {
-	  printf( "\tTimer created. (ID = 0x%lx)\n", (long)timerid );
-	}
-
-    timer_spec.it_value.tv_sec = 1.0;//0.0;
-	timer_spec.it_value.tv_nsec = 0.0;//100000000;//0.1sec timer tick
-	timer_spec.it_interval.tv_sec = timer_spec.it_value.tv_sec;
-	timer_spec.it_interval.tv_nsec = timer_spec.it_value.tv_nsec;
-
-	if(timer_settime(timerid, 0, &timer_spec, NULL) == -1) {
-	  printf( "\tError during timer setup and starting\n" );
-	} else {
-	  printf( "\tTimer setup and started.\n" );
-	}
-
-	//printf("\033[2J");
-    //printf("\033[2H");
+	timeManager();
     off_t offset = 0xc0000000;
     size_t len = 40;
     // Truncate offset to a multiple of the page size, or mmap will fail.
@@ -252,7 +218,7 @@ int main(int argc, char *argv[]) {
 	if(access(fileop,F_OK)!=-1)
 			remove(fileop);
 	fptr = fopen(fileop, "a");
-	fprintf(fptr, "ADC0, ADC1, ADC2, ADC3, ADC4, ADC5, ADC6, ADC7, DAC0, DAC1, DAC2, DAC3, Time\n");
+	fprintf(fptr, "ADC0, ADC1, ADC2, ADC3, ADC4, ADC5, ADC6, ADC7, DAC0, DAC1, DAC2, DAC3, TimeLapsed, ControllerCount, PrintCount, FileCount\n");
 	fclose(fptr);
 
     fd = open("/dev/mem", O_RDWR |  O_SYNC);
@@ -262,64 +228,10 @@ int main(int argc, char *argv[]) {
         perror("Can't map memory");
         return -1;
     }
-	while(1){
-	read_adc();		
-			
-	read_dac();
-	
-	read_gpio();
 
-    if(keys.kill_k_pressed == 1)
+	while(1)
 	{
-		keys.kill_switch_fit = 0;
-	}    
-    #if 0
-	printf("\n============ADC=============\n");
-    printf("X=%d :: Y = %d \n", myADC.Joystic_X,  myADC.Joystic_Y);
-	printf("Seat Height = %d \n", myADC.Seat_Height_Engg_Unit);
-	printf("Demand (RPM):: Left = %d :: Right = %d \n",
-		myADC.left_motor_speed_demand, myADC.right_motor_speed_demand);
-
-	printf("\n============DAC=============\n");
-	printf("\nLEFT DMND = %d :: LEFT Volt = %f \n"
-	       " RIGHT DMND = %d :: RIGHT Volt = %f \n",
-	myDAC.LWD_MTR_DMND, myDAC.LWD_MTR_DMND_Volt, myDAC.RWD_MTR_DMND, myDAC.RWD_MTR_DMND_Volt);
-	
-    printf("\n============GPIO=============\n");
-	printf("seat_switch = %d, seat_occupy = %d, kill_switch_fit = %d, kill_key_pressed = %d, K_KEY_pressed = %d \n", 
-    keys.seat_switch, keys.seat_occupy,keys.kill_switch_fit, keys.kill_key_pressed, keys.kill_k_pressed);
-    #endif
-
-	findFault();
-	controlManager();
-	//printf("\n");
-	#if 0
-	fptr = fopen(fileop, "a");
-	fprintf(fptr, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d \n",
-		    myADC.Seat_Height,
-			myADC.Joystic_X,
-			myADC.Joystic_Y,
-			myADC.LWD_MTR_SPD,
-			myADC.RWD_MTR_SPD,
-			myADC.TEST_WRAP_INP,
-			myADC.Spare_ADC_6 ,
-			myADC.Spare_ADC_7,
-			myDAC.LWD_MTR_DMND,
-			myDAC.RWD_MTR_DMND ,
-			myDAC.TEST_WRP_OP ,
-			myDAC.SPARE_DAC_3); // write to csv in each update interval
-	fclose(fptr);
-	#endif
-   //printf("\033[2J");
-   //printf("\033[2H");
-   sleep(1);
-	if(userDurationExpired == userDuration)
-	{
-		munmap(mem, 40);
-		close(fd);
-		exit(1);
-	}
-  }//while(1) ends
+    }//while(1) ends
     return 0;
 
 }
@@ -332,24 +244,22 @@ void  INThandler(int sig)
 	 {
 		 munmap(mem, 40);
 		 printf("Exiting.......\n");
-		close(fd);
-		
-          exit(0);
+		 if(fd)
+			close(fd);
+         exit(0);
 	 }
      else
           signal(SIGINT, INThandler);
      getchar(); // Get new line character
 }
 
-static void file_writer(int sig, siginfo_t *si, void *uc)
+void file_writer(int sig, siginfo_t *si, void *uc)
 {
-	
-	if(count1sec==10 || 1)
-	{
-		//printf("myDAC.left_motor_drive_gain = %d :: myDAC.right_motor_drive_gain = %d \n",
-		//	myDAC.left_motor_drive_gain, myDAC.right_motor_drive_gain);
+	struct timespec start, end;
+    clock_gettime(CLOCK_REALTIME, &start);
+	static float old=0;
 	fptr = fopen(fileop, "a");
-	fprintf(fptr, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d \n",
+	fprintf(fptr, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d \n",
 		    myADC.Seat_Height,
 			myADC.Joystic_X,
 			myADC.Joystic_Y,
@@ -362,13 +272,17 @@ static void file_writer(int sig, siginfo_t *si, void *uc)
 			myDAC.RWD_MTR_DMND ,
 			myDAC.TEST_WRP_OP ,
 			myDAC.SPARE_DAC_3,
-		    userDurationExpired); // write to csv in each update interval
+		    userDurationExpired,
+		    controlManagerCount, 
+		    printCount,
+		    fileWriteCount); // write to csv in each update interval
 	fclose(fptr);
-	count1sec=0;
 	userDurationExpired++;
-	}
-	
-	count1sec++;
-	
-		
+	fileWriteCount++;
+	clock_gettime(CLOCK_REALTIME, &end);
+    fileWriteDiff = ((float)(end.tv_nsec-start.tv_nsec)/1000000);
+	fileWriteMinorExec = fileWriteMinorExec + fileWriteDiff;
+	old = old + fileWriteDiff;
+	fileWriteAvg = old/fileWriteCount;
+	fileWriteMinorSave = fileWriteMinorSave + (1000 - fileWriteDiff);
 }

@@ -17,7 +17,7 @@ TARGET =	virtu_read
 INC_DIR = .
 
 $(TARGET):	virtu_read.c  $(LIBS)
-	$(CC) $(CCFLAGS) -o $(TARGET) virtu_read.c inputParser.c calcUnits.c controlManager.c findFault.c $(LDFLAGS) -I$(INC_DIR)
+	$(CC) $(CCFLAGS) -o $(TARGET) virtu_read.c inputParser.c calcUnits.c controlManager.c findFault.c timeManager.c $(LDFLAGS) -I$(INC_DIR)
 
 .PHONY: clean
 .PHONY: copy

@@ -68,3 +68,10 @@ void speedLimitCheck()
        myADC.right_motor_speed_demand = mph2rpm(userSpeed);
 	}
 }
+
+float limit(float input, float upper_limit, float lower_limit)
+{
+	if(input > upper_limit) return upper_limit;
+	if(input < lower_limit) return lower_limit;
+	return input;
+}

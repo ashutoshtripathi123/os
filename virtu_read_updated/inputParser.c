@@ -19,11 +19,11 @@ int process_args(int argc,char *argv[])
 			if(i<argc)
 			{
 				gain = atoi(argv[i]);
-				//if ((gain<0 )|| (gain >1))
-				//{
-				//	printf( "ERROR: -g requires a value 0 to 1\n" );
-				//	error = 1;
-				//}
+				if ((gain<0 )|| (gain >1))
+				{
+					printf( "ERROR: -g requires a value 0 to 1\n" );
+					error = 1;
+				}
 				
 				
 			}
@@ -131,8 +131,8 @@ int process_args(int argc,char *argv[])
 		printf( "Usage: ./virtu_read [options]\n"
 		  "Allowed commandline options \n"
 		  "\n"
-		  "\t-S userSpeed     User specified userSpeed from 1 to 10 mph\n"
 		  "\t-g gain      gain from 0 to 1\n"
+		  "\t-S userSpeed     User specified userSpeed from 1 to 10 mph\n"
 		  "\t-of fileName output filename in *.csv format.\n"
 		  "\t-d Timer value to Run the program. \n"
 		  "\t-M Method {0=Straight;1=Integration;2=Derivative} \n"
